@@ -68,3 +68,14 @@ export function applyMove(state, from, to, rng = Math.random) {
   const spawned = spawn(cells, rng);
   return { kind, from, to, value, spawned, gameOver: !hasMoves(cells) };
 }
+
+const isTileValue = (v) => Number.isInteger(v) && v >= 2 && v <= 1 << 20 && (v & (v - 1)) === 0;
+
+// Cloud saves can come from older versions or be corrupt: accept only a well-formed board.
+export function restoreState(saved) {
+  if (!saved || !Array.isArray(saved.cells) || saved.cells.length !== N) return null;
+  if (!saved.cells.every((v) => v === 0 || isTileValue(v))) return null;
+  if (!saved.cells.some(Boolean)) return null;
+  const score = Number.isInteger(saved.score) && saved.score >= 0 ? saved.score : 0;
+  return { cells: saved.cells.slice(), score };
+}

@@ -13,7 +13,8 @@ const platform = {
   async init() {
     try {
       const raw = yt()?.game?.loadData ? await yt().game.loadData() : localStorage.getItem(KEY);
-      this.data = raw ? JSON.parse(raw) : {};
+      const parsed = raw ? JSON.parse(raw) : {};
+      this.data = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
     } catch {
       this.data = {};
     }

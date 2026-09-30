@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
-import { SIZE, N, createState, moveKind, applyMove } from '../game/board.js';
-import { themes, drawTile, tileColor, fontSizeFor } from '../themes.js';
+import { SIZE, N, createState, moveKind, applyMove, restoreState } from '../game/board.js';
+import { themes, drawTile, tileColor, tileTextColor, fontSizeFor } from '../themes.js';
 import platform from '../platform.js';
 import audio from '../audio.js';
 
@@ -24,14 +24,16 @@ export default class GameScene extends Phaser.Scene {
     const saved = platform.data;
     this.themeIndex = Number.isInteger(saved.theme) ? saved.theme % themes.length : 0;
     this.best = saved.best || 0;
-    this.state = Array.isArray(saved.cells) && saved.cells.length === N && saved.cells.some(Boolean)
-      ? { cells: saved.cells.slice(), score: saved.score || 0 }
-      : createState();
+    this.state = restoreState(saved) || createState();
+    this.startBest = this.best;
     this.tiles = new Array(N).fill(null);
     this.busy = false;
     this.over = false;
+    this.modal = false;
     this.drag = null;
     this.combo = 0;
+    this.confirmTimer = null;
+    this.reduceMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
     this.bgLayer = this.add.graphics().setDepth(0);
     this.slotLayer = this.add.graphics().setDepth(1);
@@ -50,13 +52,17 @@ export default class GameScene extends Phaser.Scene {
 
     audio.setEnabled(platform.isAudioEnabled());
     platform.onAudioChange((on) => audio.setEnabled(on));
-    platform.onPause(() => { this.scene.pause(); audio.suspend(); });
-    platform.onResume(() => { this.scene.resume(); audio.resume(); });
+    platform.onPause(() => this.setPaused(true));
+    platform.onResume(() => this.setPaused(false));
+    this.input.keyboard.on('keydown-ESC', () => this.onEscape());
 
     // The scene is fully built here, so signal readiness now rather than waiting on a rendered frame
     // (offscreen or throttled frames would otherwise delay gameReady).
     platform.firstFrameReady();
     platform.gameReady();
+    // The best score sent must match the best score in the save.
+    if (this.best > 0) platform.sendScore(this.best);
+    if (!saved.tutorialDone) this.showTutorial();
   }
 
   // ---------- layout helpers ----------
@@ -93,7 +99,7 @@ export default class GameScene extends Phaser.Scene {
     this.hint2 = this.txt(W / 2, BY + BOARD + 88, 'Sliding into empty space adds a tile', 22).setOrigin(0.5, 0).setDepth(3);
 
     this.restartBtn = this.txt(W / 2, H - 100, '↻  NEW GAME', 34).setOrigin(0.5).setDepth(3).setInteractive({ useHandCursor: true });
-    this.restartBtn.on('pointerdown', () => { if (!this.busy) this.newGame(); });
+    this.restartBtn.on('pointerdown', () => this.onRestartTap());
 
     this.updateScore(false);
   }
@@ -159,16 +165,21 @@ export default class GameScene extends Phaser.Scene {
       .setText(String(value))
       .setFontFamily(t.font)
       .setFontSize(fontSizeFor(value))
-      .setColor(t.name === 'Candy' ? '#ffffff' : hex(t.tileText));
+      .setColor(hex(tileTextColor(t, value)));
     node.value = value;
   }
 
-  makeTile(idx, value) {
-    const { x, y } = this.cellPos(idx);
+  buildTile(x, y, value) {
     const g = this.add.graphics();
     const label = this.txt(0, 0, '', 58, { align: 'center' }).setOrigin(0.5);
     const node = this.add.container(x, y, [g, label]).setDepth(5);
     this.paint(node, value);
+    return node;
+  }
+
+  makeTile(idx, value) {
+    const { x, y } = this.cellPos(idx);
+    const node = this.buildTile(x, y, value);
     this.tiles[idx] = node;
     return node;
   }
@@ -182,7 +193,7 @@ export default class GameScene extends Phaser.Scene {
   // ---------- input ----------
   onDown(p) {
     audio.unlock();
-    if (this.busy || this.over) return;
+    if (this.busy || this.over || this.modal) return;
     const i = this.cellAt(p.x, p.y);
     const node = i >= 0 ? this.tiles[i] : null;
     if (!node) return;
@@ -229,13 +240,36 @@ export default class GameScene extends Phaser.Scene {
   }
 
   snapBack(idx, node) {
-    this.busy = true;
     const { x, y } = this.cellPos(idx);
     this.tweens.add({
       targets: node, x, y, scale: 1, duration: 200, ease: 'Back.easeOut',
-      onComplete: () => { node.setDepth(5); this.busy = false; },
+      onComplete: () => node.setDepth(5),
     });
     audio.drop();
+  }
+
+  cancelDrag() {
+    if (!this.drag) return;
+    const { idx, node } = this.drag;
+    this.drag = null;
+    this.hlLayer.clear();
+    this.shadow.setVisible(false);
+    const { x, y } = this.cellPos(idx);
+    this.tweens.killTweensOf(node);
+    node.setPosition(x, y).setScale(1).setDepth(5);
+  }
+
+  // SDK pause: stop the whole loop (updates, tweens, rendering) and audio until onResume.
+  setPaused(paused) {
+    if (paused) {
+      this.cancelDrag();
+      this.saveProgress(this.over);
+      audio.suspend();
+      this.game.loop.sleep();
+    } else {
+      this.game.loop.wake();
+      audio.resume();
+    }
   }
 
   // ---------- moves ----------
@@ -273,10 +307,12 @@ export default class GameScene extends Phaser.Scene {
     const target = this.tiles[to];
     this.paint(target, res.value);
     const { x, y } = this.cellPos(to);
-    this.tweens.add({ targets: target, scaleX: { from: 1.35, to: 1 }, scaleY: { from: 0.75, to: 1 }, duration: 320, ease: 'Elastic.easeOut' });
-    this.burst(x, y, tileColor(this.theme, res.value), 10 + Math.min(res.value / 16, 14));
+    if (!this.reduceMotion) {
+      this.tweens.add({ targets: target, scaleX: { from: 1.35, to: 1 }, scaleY: { from: 0.75, to: 1 }, duration: 320, ease: 'Elastic.easeOut' });
+      this.burst(x, y, tileColor(this.theme, res.value), 10 + Math.min(res.value / 16, 14));
+    }
     this.floatText(x, y - 40, `+${res.value}`, this.combo);
-    if (res.value >= 128) this.cameras.main.shake(140, Math.min(0.003 + res.value / 100000, 0.012));
+    if (res.value >= 128 && !this.reduceMotion) this.cameras.main.shake(140, Math.min(0.003 + res.value / 100000, 0.012));
     audio.merge(res.value, this.combo);
     this.updateScore(true);
     platform.sendScore(this.state.score);
@@ -329,23 +365,104 @@ export default class GameScene extends Phaser.Scene {
     const card = this.add.graphics();
     card.fillStyle(t.panel, 1).fillRoundedRect(80, 400, W - 160, 440, t.radius + 10);
     card.lineStyle(5, t.accent, 1).strokeRoundedRect(80, 400, W - 160, 440, t.radius + 10);
-    const title = this.txt(W / 2, 450, 'NO MOVES LEFT', 50, { fontFamily: t.font, color: hex(t.accent) }).setOrigin(0.5, 0);
+    const record = this.state.score > 0 && this.state.score > this.startBest;
+    const title = this.txt(W / 2, 450, record ? 'NEW BEST!' : 'NO MOVES LEFT', 50, { fontFamily: t.font, color: hex(t.accent) }).setOrigin(0.5, 0);
     const score = this.txt(W / 2, 540, String(this.state.score), 110, { fontFamily: t.font, color: t.text }).setOrigin(0.5, 0);
     const best = this.txt(W / 2, 670, `BEST  ${this.best}`, 34, { fontFamily: t.font, color: t.label }).setOrigin(0.5, 0);
     const btn = this.add.graphics();
     btn.fillStyle(t.accent, 1).fillRoundedRect(180, 730, W - 360, 80, 40);
     const btnText = this.txt(W / 2, 770, 'PLAY AGAIN', 36, { fontFamily: t.font, color: hex(t.bg) }).setOrigin(0.5);
     const hit = this.add.rectangle(W / 2, 770, W - 360, 80, 0xffffff, 0).setInteractive({ useHandCursor: true });
-    hit.on('pointerdown', () => { c.destroy(); this.newGame(); });
+    hit.on('pointerdown', () => this.newGame());
     c.add([dim, card, title, score, best, btn, btnText, hit]);
     c.setAlpha(0);
     this.tweens.add({ targets: c, alpha: 1, duration: 250 });
     this.overlay = c;
   }
 
+  onEscape() {
+    if (this.tutorial) this.closeTutorial();
+    else if (this.overlay) this.newGame();
+  }
+
+  // Wiping a run needs a deliberate second tap so a stray touch can't lose progress.
+  onRestartTap() {
+    if (this.busy || this.modal) return;
+    if (!this.confirmTimer) {
+      this.restartBtn.setText('TAP AGAIN TO CONFIRM');
+      this.confirmTimer = this.time.delayedCall(2500, () => this.resetRestartBtn());
+      return;
+    }
+    this.resetRestartBtn();
+    this.newGame();
+  }
+
+  resetRestartBtn() {
+    this.confirmTimer?.remove(false);
+    this.confirmTimer = null;
+    this.restartBtn.setText('↻  NEW GAME');
+  }
+
+  // First-run demo: a finger drags one 2 onto another and they become a 4.
+  showTutorial() {
+    const t = this.theme;
+    this.modal = true;
+    const c = this.add.container(0, 0).setDepth(100);
+    const dim = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.8).setInteractive();
+    const title = this.txt(W / 2, 330, 'HOW TO PLAY', 56, { fontFamily: t.font, color: hex(t.accent) }).setOrigin(0.5);
+    const line1 = this.txt(W / 2, 780, 'Drag a tile onto an equal\nneighbour to merge them', 38, { fontFamily: t.font, color: '#ffffff', align: 'center' }).setOrigin(0.5);
+    const line2 = this.txt(W / 2, 890, 'Slide into empty cells to make room.\nThe game ends when the board is full.', 26, { fontFamily: t.font, color: '#c9c9d6', align: 'center' }).setOrigin(0.5);
+    const go = this.txt(W / 2, 1040, 'TAP TO PLAY', 44, { fontFamily: t.font, color: hex(t.accent) }).setOrigin(0.5);
+    this.tweens.add({ targets: go, alpha: 0.45, duration: 700, yoyo: true, repeat: -1 });
+
+    const ax = W / 2 - 110;
+    const bx = W / 2 + 110;
+    const y = 580;
+    const a = this.buildTile(ax, y, 2);
+    const b = this.buildTile(bx, y, 2);
+    const finger = this.add.circle(ax, y + 20, 30, 0xffffff, 0.9).setStrokeStyle(6, t.accent).setAlpha(0);
+    c.add([dim, title, line1, line2, go, b, a, finger]);
+
+    const cycle = () => {
+      this.paint(b, 2);
+      a.setPosition(ax, y).setAlpha(1).setScale(1);
+      b.setScale(1);
+      finger.setPosition(ax, y + 20).setAlpha(0);
+      this.tweens.add({
+        targets: finger, alpha: 1, duration: 250,
+        onComplete: () => {
+          this.tweens.add({ targets: [a, finger], x: bx, duration: 650, ease: 'Sine.easeInOut', delay: 150,
+            onComplete: () => {
+              a.setAlpha(0);
+              this.paint(b, 4);
+              this.tweens.add({ targets: b, scale: { from: 1.3, to: 1 }, duration: 300, ease: 'Back.easeOut' });
+              this.tweens.add({ targets: finger, alpha: 0, duration: 250 });
+            } });
+        },
+      });
+    };
+    cycle();
+    this.tutorialLoop = this.time.addEvent({ delay: 2800, loop: true, callback: cycle });
+
+    dim.on('pointerdown', () => this.closeTutorial());
+    this.tutorial = c;
+  }
+
+  closeTutorial() {
+    if (!this.tutorial) return;
+    this.tutorialLoop?.remove(false);
+    this.tutorial.destroy();
+    this.tutorial = null;
+    platform.save({ tutorialDone: true });
+    audio.unlock();
+    // Delay so the tap that dismissed the tutorial isn't also read as a drag start.
+    this.time.delayedCall(80, () => { this.modal = false; });
+  }
+
   newGame() {
     this.overlay?.destroy();
     this.overlay = null;
+    this.startBest = this.best;
     this.state = createState();
     this.over = false;
     this.busy = false;

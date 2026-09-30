@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SIZE, N, createState, moveKind, applyMove, hasMoves, spawn } from '../src/game/board.js';
+import { SIZE, N, createState, moveKind, applyMove, hasMoves, spawn, restoreState } from '../src/game/board.js';
 
 const empty = () => new Array(N).fill(0);
 
@@ -51,4 +51,17 @@ test('hasMoves: full board without pairs is over', () => {
 
 test('spawn returns null on a full board', () => {
   assert.equal(spawn(new Array(N).fill(2)), null);
+});
+
+test('restoreState accepts a valid save and rejects bad ones', () => {
+  const ok = empty(); ok[3] = 8; ok[4] = 2;
+  assert.deepEqual(restoreState({ cells: ok, score: 40 }), { cells: ok, score: 40 });
+  assert.equal(restoreState({ cells: ok, score: -5 }).score, 0);
+  assert.equal(restoreState(null), null);
+  assert.equal(restoreState({ cells: [2, 2] }), null);
+  assert.equal(restoreState({ cells: empty() }), null); // empty board
+  const bad = empty(); bad[0] = 3;
+  assert.equal(restoreState({ cells: bad }), null); // not a power of two
+  const str = empty(); str[0] = '4';
+  assert.equal(restoreState({ cells: str }), null);
 });
