@@ -1,4 +1,4 @@
-"""Renders the Playables preview video (16:9, no audio) from a scripted game, in the Neon Night look.
+"""Renders the Playables preview video (16:9, with generated soundtrack) from a scripted game, in the Neon Night look.
 The script plays by the real rules (merge equal neighbours, or slide into empty cells) and asserts every move.
 No logos or branding text: only tiles and a score number.
 Run: python3 store/make_video.py   (needs ffmpeg)
@@ -210,17 +210,27 @@ def frame_at(t):
 
 
 def main():
+    import make_audio
+
     total = T_START + len(STEPS) * T_MOVE + T_END
     n = int(total * FPS)
-    out = Path(__file__).parent / 'number-stack-preview-1920x1080.mp4'
+    here = Path(__file__).parent
+    silent = here / 'preview_silent.mp4'
+    wav = here / 'preview_audio.wav'
+    out = here / 'number-stack-preview-1920x1080.mp4'
     cmd = ['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{W}x{H}', '-r', str(FPS),
-           '-i', '-', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', '-movflags', '+faststart', str(out)]
+           '-i', '-', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '18', '-movflags', '+faststart', str(silent)]
     p = subprocess.Popen(cmd, stdin=subprocess.PIPE)
     for i in range(n):
         p.stdin.write(frame_at(i / FPS).tobytes())
     p.stdin.close()
     p.wait()
-    print(f'wrote {out} ({n} frames, {total:.1f}s)')
+    make_audio.build(wav, n / FPS, STEPS, MOVES, T_START, T_MOVE)
+    subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-i', str(silent), '-i', str(wav), '-c:v', 'copy',
+                    '-af', 'loudnorm=I=-15:TP=-1.5:LRA=11', '-ar', '44100', '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', str(out)], check=True)
+    silent.unlink()
+    wav.unlink()
+    print(f'wrote {out} ({n} frames, {total:.1f}s, with audio)')
 
 
 if __name__ == '__main__':
