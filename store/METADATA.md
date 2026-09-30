@@ -11,7 +11,7 @@ Check each field against the portal when you fill it in.
 | Short description | `Drag matching number tiles together to merge them into bigger numbers. Simple to start, hard to stop. How high can you go?` (122 chars) | 150 chars (unconfirmed) |
 | Genre (primary) | Puzzle | 1-2 genres (unconfirmed) |
 | Genre (secondary) | Casual | |
-| Publisher / developer | YOUR NAME OR STUDIO (fill in: use the same name as your YouTube channel) | |
+| Publisher / developer | Bassem Tarek | |
 
 Longer description, if the portal has a second field:
 
@@ -49,4 +49,3 @@ File names use only letters, numbers, `-`, `_` and `.`; all paths are relative.
 - [ ] Onboarded YouTube channel with Manager/Editor permission (portal is invitation-only).
 - [ ] Test on YouTube desktop web, mobile web, Android app and iOS app using the Dev Link.
 - [ ] Do not share the Dev/Staging links outside certification testing.
-- [ ] Fill in the publisher/developer name above.
