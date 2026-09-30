@@ -53,10 +53,10 @@ export default class GameScene extends Phaser.Scene {
     platform.onPause(() => { this.scene.pause(); audio.suspend(); });
     platform.onResume(() => { this.scene.resume(); audio.resume(); });
 
-    this.game.events.once(Phaser.Core.Events.POST_RENDER, () => {
-      platform.firstFrameReady();
-      platform.gameReady();
-    });
+    // The scene is fully built here, so signal readiness now rather than waiting on a rendered frame
+    // (offscreen or throttled frames would otherwise delay gameReady).
+    platform.firstFrameReady();
+    platform.gameReady();
   }
 
   // ---------- layout helpers ----------
