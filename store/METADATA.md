@@ -4,6 +4,22 @@ Everything the Developer Portal asks for, ready to paste. Limits marked (unconfi
 third-party summaries, because Google's public docs say the exact sizes are shown in the portal.
 Check each field against the portal when you fill it in.
 
+## Brand identity (from the logo)
+Logo: `store/logo/` (original `logo_original.webp`; 1024, 512, 192 and 48 px PNGs). Use it for the channel avatar,
+app icon and profile. Do NOT put it in Playables thumbnails, title or description (branding is not allowed there).
+The in-game header shows a rounded copy (`public/logo.png`).
+
+| Element | Value |
+|---|---|
+| Background | deep navy `#080d3a` to `#0d1555`, indigo glow shapes |
+| Tiles | glossy "jelly": cyan `#1fd8ff`, lime `#92e604`, yellow `#ffd21f`, orange `#ff8a1f`, pink `#fd288d`, magenta `#d23cff`, violet `#a98bff` |
+| Numerals | bold rounded, dark navy `#061043` |
+| Accent | bright cyan `#2ff4ff` |
+| Sparks | warm yellow `#ffd54a` and cream `#fff4c4` |
+| Font | Trebuchet MS bold |
+
+The default in-game theme ("Neon Night"), the thumbnails and the preview video all use this palette.
+
 ## Text fields
 | Field | Value | Limit |
 |---|---|---|

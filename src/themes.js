@@ -1,15 +1,17 @@
 // All visuals are code-drawn; a theme is just data. Palettes are indexed by log2(value) - 1.
 export const themes = [
   {
+    // Default theme: the game's identity, matched to the logo (deep navy, glossy jelly tiles, warm sparks).
     name: 'Neon Night',
     font: '"Trebuchet MS", Verdana, sans-serif',
-    bg: 0x0b0b1a, deco: 0x6a5cff, decoAlpha: 0.10,
-    slot: 0x15152b, slotLine: 0x2c2c5a,
-    panel: 0x15152b, accent: 0x00e5ff,
-    label: '#7d7fb8', text: '#ffffff',
-    radius: 26, glow: true, gloss: false, outline: 0,
-    palette: [0x00e5ff, 0x00ff9d, 0x9dff00, 0xffe600, 0xff9100, 0xff3d71, 0xff00d4, 0xb14dff, 0x6a5cff, 0x2f8bff, 0xffffff],
-    textDark: 0x0b0b1a,
+    bg: 0x080d3a, deco: 0x2a3aff, decoAlpha: 0.14,
+    slot: 0x0f1553, slotLine: 0x27308f,
+    panel: 0x0b1047, accent: 0x2ff4ff,
+    label: '#98a2f0', text: '#ffffff',
+    radius: 30, glow: true, gloss: false, jelly: true, outline: 0,
+    sparks: [0xffd54a, 0xfff4c4],
+    palette: [0x1fd8ff, 0x92e604, 0xffd21f, 0xff8a1f, 0xfd288d, 0xd23cff, 0xa98bff, 0x3d7bff, 0x00e0b8, 0xffffff, 0xffd54a],
+    textDark: 0x061043,
   },
   {
     name: 'Clean Pastel',
@@ -79,6 +81,13 @@ export function drawTile(g, size, value, theme) {
     }
   }
   g.fillStyle(c, 1).fillRoundedRect(-h, -h, size, size, r);
+  if (theme.jelly) {
+    g.fillStyle(0x000000, 0.14).fillRoundedRect(-h + 8, h - 24, size - 16, 16, 8);
+    g.fillStyle(0xffffff, 0.2).fillRoundedRect(-h + 8, -h + 8, size - 16, size * 0.44, r * 0.85);
+    g.fillStyle(0xffffff, 0.6).fillEllipse(-h + size * 0.27, -h + size * 0.19, size * 0.2, size * 0.075);
+    g.fillStyle(0xffffff, 0.6).fillCircle(-h + size * 0.45, -h + size * 0.185, size * 0.022);
+    g.lineStyle(3, 0xffffff, 0.3).strokeRoundedRect(-h + 4, -h + 4, size - 8, size - 8, r - 3);
+  }
   if (theme.gloss) {
     g.fillStyle(0xffffff, 0.28).fillRoundedRect(-h + 8, -h + 8, size - 16, size * 0.38, r * 0.7);
     g.fillStyle(0x000000, 0.14).fillRoundedRect(-h + 6, h - 20, size - 12, 14, 7);

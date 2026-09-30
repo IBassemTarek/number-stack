@@ -9,13 +9,16 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 FONT = '/System/Library/Fonts/Supplemental/Trebuchet MS Bold.ttf'
 SS = 2  # supersampling factor
 
-BG_TOP, BG_BOT = (11, 11, 26), (22, 20, 58)
-DECO = (106, 92, 255)
-SLOT, SLOT_LINE, PANEL = (21, 21, 43), (44, 44, 90), (21, 21, 43)
-ACCENT = (0, 229, 255)
-DARK = (11, 11, 26)
-PALETTE = [(0, 229, 255), (0, 255, 157), (157, 255, 0), (255, 230, 0), (255, 145, 0),
-           (255, 61, 113), (255, 0, 212), (177, 77, 255), (106, 92, 255), (47, 139, 255), (255, 255, 255)]
+# Palette matched to the logo: deep navy, glossy jelly tiles, warm sparks (same values as src/themes.js).
+BG_TOP, BG_BOT = (5, 9, 44), (13, 21, 88)
+DECO = (42, 58, 255)
+SLOT, SLOT_LINE, PANEL = (15, 21, 83), (39, 48, 143), (11, 16, 71)
+ACCENT = (47, 244, 255)
+DARK = (6, 16, 67)
+PINK = (253, 40, 141)
+WARM = [(255, 213, 74), (255, 244, 196)]
+PALETTE = [(31, 216, 255), (146, 230, 4), (255, 210, 31), (255, 138, 31), (253, 40, 141),
+           (210, 60, 255), (169, 139, 255), (61, 123, 255), (0, 224, 184), (255, 255, 255), (255, 213, 74)]
 
 
 def color_for(v):
@@ -56,9 +59,15 @@ def draw_tile(canvas, cx, cy, size, value, scale=1.0, glow=1.0, shadow=False):
         g = rrect_layer(canvas.size, [x0 - s * 0.04, y0 - s * 0.04, x1 + s * 0.04, y1 + s * 0.04], r * 1.1, fill=col + (int(150 * glow),))
         canvas.alpha_composite(g.filter(ImageFilter.GaussianBlur(s * 0.16)))
     canvas.alpha_composite(rrect_layer(canvas.size, [x0, y0, x1, y1], r, fill=col + (255,)))
-    # soft top sheen
-    sheen = rrect_layer(canvas.size, [x0 + s * 0.06, y0 + s * 0.05, x1 - s * 0.06, y0 + s * 0.42], r * 0.8, fill=(255, 255, 255, 34))
-    canvas.alpha_composite(sheen)
+    # jelly finish: darker bottom lip, soft sheen, specular highlights, light inner rim
+    canvas.alpha_composite(rrect_layer(canvas.size, [x0 + s * 0.06, y1 - s * 0.19, x1 - s * 0.06, y1 - s * 0.05], s * 0.06, fill=(0, 0, 0, 36)))
+    canvas.alpha_composite(rrect_layer(canvas.size, [x0 + s * 0.06, y0 + s * 0.06, x1 - s * 0.06, y0 + s * 0.46], r * 0.85, fill=(255, 255, 255, 52)))
+    hl = Image.new('RGBA', canvas.size, (0, 0, 0, 0))
+    hd = ImageDraw.Draw(hl)
+    hd.ellipse([x0 + s * 0.17, y0 + s * 0.135, x0 + s * 0.37, y0 + s * 0.215], fill=(255, 255, 255, 170))
+    hd.ellipse([x0 + s * 0.425, y0 + s * 0.145, x0 + s * 0.47, y0 + s * 0.19], fill=(255, 255, 255, 170))
+    canvas.alpha_composite(hl)
+    canvas.alpha_composite(rrect_layer(canvas.size, [x0 + s * 0.02, y0 + s * 0.02, x1 - s * 0.02, y1 - s * 0.02], r * 0.93, outline=(255, 255, 255, 80), width=max(2, int(s * 0.02))))
     label = str(value)
     fsize = s * (0.5 if len(label) <= 2 else 0.4 if len(label) == 3 else 0.32)
     font = ImageFont.truetype(FONT, int(fsize))
@@ -96,7 +105,7 @@ def sparks(canvas, cx, cy, radius, n, seed):
         a = rnd.random() * math.tau
         d = radius * (0.5 + rnd.random())
         r = radius * (0.03 + rnd.random() * 0.05)
-        col = rnd.choice(PALETTE[:8])
+        col = rnd.choice(WARM + WARM + [PINK, ACCENT])
         px, py = cx + math.cos(a) * d, cy + math.sin(a) * d
         layer = Image.new('RGBA', canvas.size, (0, 0, 0, 0))
         ImageDraw.Draw(layer).ellipse([px - r, py - r, px + r, py + r], fill=col + (230,))
@@ -125,7 +134,7 @@ def draw_board(canvas, x0, y0, cell, gap, hero=True):
 def base(w, h):
     canvas = gradient(w, h)
     glow_blob(canvas, w * 0.12, h * 0.92, min(w, h) * 0.45, DECO, 70)
-    glow_blob(canvas, w * 0.9, h * 0.1, min(w, h) * 0.4, (255, 0, 212), 38)
+    glow_blob(canvas, w * 0.9, h * 0.1, min(w, h) * 0.4, PINK, 40)
     glow_blob(canvas, w * 0.85, h * 0.75, min(w, h) * 0.3, ACCENT, 26)
     return canvas
 

@@ -20,6 +20,10 @@ export default class GameScene extends Phaser.Scene {
     super('Game');
   }
 
+  preload() {
+    this.load.image('logo', 'logo.png');
+  }
+
   create() {
     const saved = platform.data;
     this.themeIndex = Number.isInteger(saved.theme) ? saved.theme % themes.length : 0;
@@ -85,7 +89,8 @@ export default class GameScene extends Phaser.Scene {
 
   // ---------- static UI ----------
   buildUI() {
-    this.title = this.txt(40, 44, 'NUMBER STACK', 30).setDepth(3);
+    this.logo = this.add.image(40, 26, 'logo').setOrigin(0, 0).setDisplaySize(72, 72).setDepth(3);
+    this.title = this.txt(126, 46, 'NUMBER STACK', 32).setDepth(3);
     this.scoreLabel = this.txt(40, 110, 'SCORE', 24).setDepth(3);
     this.scoreText = this.txt(40, 140, '0', 72).setDepth(3);
     this.bestLabel = this.txt(400, 110, 'BEST', 24).setDepth(3);
@@ -333,7 +338,8 @@ export default class GameScene extends Phaser.Scene {
     for (let i = 0; i < count; i++) {
       const a = Math.random() * Math.PI * 2;
       const d = 60 + Math.random() * 90;
-      const dot = this.add.circle(x, y, 5 + Math.random() * 7, color, 1).setDepth(20);
+      const pool = [color, ...(this.theme.sparks || [])];
+      const dot = this.add.circle(x, y, 5 + Math.random() * 7, pool[Math.floor(Math.random() * pool.length)], 1).setDepth(20);
       this.tweens.add({
         targets: dot, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d, alpha: 0, scale: 0.2,
         duration: 380 + Math.random() * 220, ease: 'Cubic.easeOut', onComplete: () => dot.destroy(),

@@ -181,7 +181,8 @@ def frame_at(t):
             overlay = Image.new('RGBA', (W, H), (0, 0, 0, 0))
             od = ImageDraw.Draw(overlay)
             rnd = random.Random(idx * 91 + 5)
-            col = art.color_for(gain)
+            tile_col = art.color_for(gain)
+            pool = [tile_col] + art.WARM + art.WARM
             for _ in range(16):
                 a = rnd.random() * math.tau
                 sp_ = 150 + rnd.random() * 260
@@ -191,7 +192,7 @@ def frame_at(t):
                     d = sp_ * ease_out(age / life)
                     rr = (6 + rnd.random() * 9) * (1 - age / life * 0.7)
                     px, py = tx + math.cos(a) * d, ty + math.sin(a) * d
-                    od.ellipse([px - rr, py - rr, px + rr, py + rr], fill=col + (int(255 * (1 - age / life)),))
+                    od.ellipse([px - rr, py - rr, px + rr, py + rr], fill=pool[int(rnd.random() * len(pool))] + (int(255 * (1 - age / life)),))
             age = u - merged_at
             if age < 0.8:
                 od.text((tx, max(70, ty - 20 - 70 * ease_out(age / 0.8))), f'+{gain}', font=F_FLOAT, fill=art.ACCENT + (int(255 * (1 - age / 0.8)),), anchor='mm')
