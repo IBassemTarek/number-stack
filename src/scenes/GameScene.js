@@ -53,8 +53,10 @@ export default class GameScene extends Phaser.Scene {
     platform.onPause(() => { this.scene.pause(); audio.suspend(); });
     platform.onResume(() => { this.scene.resume(); audio.resume(); });
 
-    this.game.events.once(Phaser.Core.Events.POST_RENDER, () => platform.firstFrameReady());
-    this.time.delayedCall(50, () => platform.gameReady());
+    this.game.events.once(Phaser.Core.Events.POST_RENDER, () => {
+      platform.firstFrameReady();
+      platform.gameReady();
+    });
   }
 
   // ---------- layout helpers ----------
