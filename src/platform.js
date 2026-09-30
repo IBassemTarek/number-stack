@@ -30,7 +30,7 @@ const platform = {
 
   firstFrameReady() { try { yt()?.game?.firstFrameReady(); } catch { /* noop */ } },
   gameReady() { try { yt()?.game?.gameReady(); } catch { /* noop */ } },
-  sendScore(value) { try { yt()?.engagement?.sendScore({ value }); } catch { /* noop */ } },
+  sendScore(value) { try { yt()?.engagement?.sendScore({ value: Math.max(0, Math.floor(value)) }); } catch { /* noop */ } },
 
   isAudioEnabled() {
     try { return yt()?.system?.isAudioEnabled?.() ?? true; } catch { return true; }

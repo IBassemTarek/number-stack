@@ -279,6 +279,7 @@ export default class GameScene extends Phaser.Scene {
     if (res.value >= 128) this.cameras.main.shake(140, Math.min(0.003 + res.value / 100000, 0.012));
     audio.merge(res.value, this.combo);
     this.updateScore(true);
+    platform.sendScore(this.state.score);
     if (prevBest > 0 && prevBest < this.best && !this.announcedBest) {
       this.announcedBest = true;
       this.floatText(W / 2, BY - 40, 'NEW BEST!', 1, 56);
