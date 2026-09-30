@@ -1,9 +1,10 @@
 // Pure game logic: no Phaser, no DOM. Cells are indexed row * SIZE + col; 0 = empty.
 export const SIZE = 5;
 export const N = SIZE * SIZE;
+export const COMBO_CAP = 5;
 
 export function createState(rng = Math.random) {
-  const state = { cells: new Array(N).fill(0), score: 0 };
+  const state = { cells: new Array(N).fill(0), score: 0, combo: 0 };
   for (let i = 0; i < 9; i++) spawn(state.cells, rng);
   return state;
 }
@@ -51,22 +52,27 @@ export function hasMoves(cells) {
 }
 
 // Merges cost nothing (two tiles become one, one spawns); slides add a tile, so the board slowly fills.
+// Consecutive merges build a combo that multiplies the points (x1, x2 ... up to COMBO_CAP); a slide breaks it.
 export function applyMove(state, from, to, rng = Math.random) {
   const kind = moveKind(state.cells, from, to);
   if (!kind) return null;
   const { cells } = state;
   let value;
+  let points = 0;
   if (kind === 'merge') {
     value = cells[to] * 2;
     cells[to] = value;
-    state.score += value;
+    state.combo = (state.combo || 0) + 1;
+    points = value * Math.min(state.combo, COMBO_CAP);
+    state.score += points;
   } else {
     value = cells[from];
     cells[to] = value;
+    state.combo = 0;
   }
   cells[from] = 0;
   const spawned = spawn(cells, rng);
-  return { kind, from, to, value, spawned, gameOver: !hasMoves(cells) };
+  return { kind, from, to, value, points, spawned, gameOver: !hasMoves(cells) };
 }
 
 const isTileValue = (v) => Number.isInteger(v) && v >= 2 && v <= 1 << 20 && (v & (v - 1)) === 0;
@@ -77,5 +83,5 @@ export function restoreState(saved) {
   if (!saved.cells.every((v) => v === 0 || isTileValue(v))) return null;
   if (!saved.cells.some(Boolean)) return null;
   const score = Number.isInteger(saved.score) && saved.score >= 0 ? saved.score : 0;
-  return { cells: saved.cells.slice(), score };
+  return { cells: saved.cells.slice(), score, combo: 0 };
 }

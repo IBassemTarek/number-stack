@@ -4,6 +4,13 @@ Everything the Developer Portal asks for, ready to paste. Limits marked (unconfi
 third-party summaries, because Google's public docs say the exact sizes are shown in the portal.
 Check each field against the portal when you fill it in.
 
+## How the game differs from 2048-style games
+Playables rejects duplicates of games already on the platform, so these are the differentiators to mention if asked:
+- **Drag-to-merge with slides:** you drag any tile onto an equal neighbour or into an empty cell (no swipe-the-whole-board), so every move is a choice.
+- **Combo multipliers:** consecutive merges multiply points (x1 to x5); a slide breaks the chain, so ordering matters.
+- **Daily Challenge:** the same seeded board and tile sequence for every player each UTC day, limited to 40 moves, with a saved streak. No server needed.
+- **Four themes** the player can switch between, and a game-over screen that links the two modes.
+
 ## Brand identity (from the logo)
 Logo: `store/logo/` (original `logo_original.webp`; 1024, 512, 192 and 48 px PNGs). Use it for the channel avatar,
 app icon and profile. Do NOT put it in Playables thumbnails, title or description (branding is not allowed there).
@@ -24,14 +31,14 @@ The default in-game theme ("Neon Night"), the thumbnails and the preview video a
 | Field | Value | Limit |
 |---|---|---|
 | Title | `Number Stack` (12 chars) | 50 chars (unconfirmed) |
-| Short description | `Drag matching number tiles together to merge them into bigger numbers. Simple to start, hard to stop. How high can you go?` (122 chars) | 150 chars (unconfirmed) |
+| Short description | `Drag matching number tiles to merge them, chain combos for big points, and beat the daily board. Simple to start, hard to stop.` (127 chars) | 150 chars (unconfirmed) |
 | Genre (primary) | Puzzle | 1-2 genres (unconfirmed) |
 | Genre (secondary) | Casual | |
 | Publisher / developer | Bassem Tarek | |
 
 Longer description, if the portal has a second field:
 
-> Number Stack is a quick, satisfying number puzzle. Drag a tile onto an identical neighbour to merge them into double the value, or slide it into an empty cell to make room. Each move adds a new tile, so the board fills up fast: plan ahead, chain merges for big scores, and see how high you can stack. Games last a few minutes, your best score is saved, and you can switch between four colour themes.
+> Number Stack is a quick, satisfying number puzzle. Drag a tile onto an identical neighbour to merge them into double the value, or slide it into an empty cell to make room. Chain merges for combo multipliers, and take on the Daily Challenge: the same board for every player each day, 40 moves, and a streak to keep alive. Your best score is saved, and you can switch between four colour themes.
 
 Metadata rules to respect (from the design requirements):
 - No branding or logos in thumbnails, description or title. The art has only number tiles.

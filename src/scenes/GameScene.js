@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { SIZE, N, createState, moveKind, applyMove, restoreState } from '../game/board.js';
+import { SIZE, N, createState, moveKind, applyMove, restoreState, hasMoves } from '../game/board.js';
+import { DAILY_MOVES, makeRng, todayKey, seedFor, streakAfterFinish, liveStreak } from '../game/daily.js';
 import { themes, drawTile, tileColor, tileTextColor, fontSizeFor } from '../themes.js';
 import platform from '../platform.js';
 import audio from '../audio.js';
@@ -28,15 +29,15 @@ export default class GameScene extends Phaser.Scene {
     const saved = platform.data;
     this.themeIndex = Number.isInteger(saved.theme) ? saved.theme % themes.length : 0;
     this.best = saved.best || 0;
-    this.state = restoreState(saved) || createState();
     this.startBest = this.best;
+    this.mode = saved.mode === 'daily' ? 'daily' : 'endless';
     this.tiles = new Array(N).fill(null);
     this.busy = false;
-    this.over = false;
     this.modal = false;
     this.drag = null;
-    this.combo = 0;
     this.confirmTimer = null;
+    this.announcedBest = false;
+    this.loadMode();
     this.reduceMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
     this.bgLayer = this.add.graphics().setDepth(0);
@@ -67,6 +68,67 @@ export default class GameScene extends Phaser.Scene {
     // The best score sent must match the best score in the save.
     if (this.best > 0) platform.sendScore(this.best);
     if (!saved.tutorialDone) this.showTutorial();
+    else if (this.over) this.showResult(true);
+  }
+
+  // ---------- modes: endless and the daily challenge ----------
+  loadMode() {
+    const data = platform.data;
+    this.combo = 0;
+    this.over = false;
+    if (this.mode === 'daily') {
+      const today = todayKey();
+      const d = data.daily && data.daily.date === today ? data.daily : null;
+      const st = d && restoreState(d);
+      if (st && d.start && Array.isArray(d.start.cells) && Number.isInteger(d.start.rng) && Number.isInteger(d.rng) && Number.isInteger(d.movesLeft)) {
+        this.state = st;
+        this.rng = makeRng(d.rng);
+        this.movesLeft = Math.max(0, d.movesLeft);
+        this.dailyStart = d.start;
+        this.dailyBest = d.best || 0;
+        this.dailyDate = today;
+      } else {
+        this.newDaily(today, d ? d.best || 0 : 0);
+      }
+      this.over = this.movesLeft <= 0 || !hasMoves(this.state.cells);
+    } else {
+      this.state = restoreState(data) || createState();
+    }
+  }
+
+  newDaily(today, best) {
+    this.dailyDate = today;
+    this.rng = makeRng(seedFor(today));
+    this.state = createState(this.rng);
+    this.dailyStart = { cells: this.state.cells.slice(), rng: this.rng.getState() };
+    this.movesLeft = DAILY_MOVES;
+    this.dailyBest = best;
+  }
+
+  retryDaily() {
+    this.state = { cells: this.dailyStart.cells.slice(), score: 0, combo: 0 };
+    this.rng = makeRng(this.dailyStart.rng);
+    this.movesLeft = DAILY_MOVES;
+  }
+
+  setMode(mode) {
+    if (this.busy || this.modal || mode === this.mode) return;
+    this.cancelDrag();
+    this.saveProgress(this.over);
+    this.overlay?.destroy();
+    this.overlay = null;
+    this.mode = mode;
+    platform.save({ mode });
+    this.resetRestartBtn();
+    this.loadMode();
+    this.startBest = this.best;
+    this.announcedBest = false;
+    this.syncTiles();
+    this.updateScore(false);
+    this.refreshModeUI();
+    audio.unlock();
+    audio.pick();
+    if (this.over) this.showResult(true);
   }
 
   // ---------- layout helpers ----------
@@ -103,9 +165,53 @@ export default class GameScene extends Phaser.Scene {
     this.hint = this.txt(W / 2, BY + BOARD + 44, 'Drag a tile onto an equal neighbour to merge', 28, { align: 'center', wordWrap: { width: W - 60 } }).setOrigin(0.5, 0).setDepth(3);
     this.hint2 = this.txt(W / 2, BY + BOARD + 88, 'Sliding into empty space adds a tile', 22).setOrigin(0.5, 0).setDepth(3);
 
-    this.restartBtn = this.txt(W / 2, H - 100, '↻  NEW GAME', 34).setOrigin(0.5).setDepth(3).setInteractive({ useHandCursor: true });
+    this.restartBtn = this.txt(W / 2, H - 100, this.restartLabel(), 34).setOrigin(0.5).setDepth(3).setInteractive({ useHandCursor: true });
     this.restartBtn.on('pointerdown', () => this.onRestartTap());
+    this.buildPills();
 
+    this.updateScore(false);
+  }
+
+  buildPills() {
+    this.pills = {};
+    for (const [mode, label, x] of [['endless', 'ENDLESS', W / 2 - 138], ['daily', 'DAILY', W / 2 + 138]]) {
+      const bg = this.add.graphics().setDepth(3);
+      const txt = this.txt(x, 264, label, 30).setOrigin(0.5).setDepth(4);
+      const hit = this.add.rectangle(x, 264, 260, 76, 0xffffff, 0).setDepth(4).setInteractive({ useHandCursor: true });
+      hit.on('pointerdown', () => this.setMode(mode));
+      this.pills[mode] = { bg, txt, x };
+    }
+  }
+
+  drawPills() {
+    const t = this.theme;
+    for (const [mode, p] of Object.entries(this.pills)) {
+      const on = mode === this.mode;
+      p.bg.clear();
+      p.bg.fillStyle(on ? t.accent : t.panel, 1).fillRoundedRect(p.x - 130, 264 - 38, 260, 76, 38);
+      if (!on) p.bg.lineStyle(3, t.slotLine, 1).strokeRoundedRect(p.x - 130, 264 - 38, 260, 76, 38);
+      p.txt.setColor(on ? hex(t.bg) : t.text).setFontFamily(t.font);
+    }
+  }
+
+  restartLabel() {
+    return this.mode === 'daily' ? '↻  RETRY TODAY' : '↻  NEW GAME';
+  }
+
+  refreshModeUI() {
+    const daily = this.mode === 'daily';
+    this.bestLabel.setText(daily ? 'MOVES LEFT' : 'BEST');
+    if (daily) {
+      const streak = liveStreak(platform.data.streak, platform.data.lastDone, this.dailyDate);
+      this.hint.setText('Same board for everyone today');
+      this.hint2.setText(`Streak ${streak} day${streak === 1 ? '' : 's'}  ·  Best today ${this.dailyBest}`);
+    } else {
+      this.hint.setText('Drag a tile onto an equal neighbour to merge');
+      this.hint2.setText('Chain merges for combo points');
+    }
+    this.hint2.setY(this.hint.y + this.hint.height + 10);
+    this.restartBtn.setText(this.restartLabel());
+    this.drawPills();
     this.updateScore(false);
   }
 
@@ -142,6 +248,7 @@ export default class GameScene extends Phaser.Scene {
     this.restartBtn.setColor(hex(t.accent)).setFontFamily(t.font);
 
     this.tiles.forEach((n) => n && this.paint(n, n.value));
+    this.refreshModeUI();
   }
 
   cycleTheme() {
@@ -155,8 +262,12 @@ export default class GameScene extends Phaser.Scene {
 
   updateScore(bump = true) {
     this.scoreText.setText(String(this.state.score));
-    if (this.state.score > this.best) this.best = this.state.score;
-    this.bestText.setText(String(this.best));
+    if (this.mode === 'daily') {
+      this.bestText.setText(String(this.movesLeft));
+    } else {
+      if (this.state.score > this.best) this.best = this.state.score;
+      this.bestText.setText(String(this.best));
+    }
     if (bump) {
       this.tweens.add({ targets: this.scoreText, scale: { from: 1.18, to: 1 }, duration: 180, ease: 'Sine.easeOut' });
     }
@@ -282,7 +393,10 @@ export default class GameScene extends Phaser.Scene {
     this.busy = true;
     const node = this.tiles[from];
     const prevBest = this.best;
-    const res = applyMove(this.state, from, to);
+    const daily = this.mode === 'daily';
+    const res = applyMove(this.state, from, to, daily ? this.rng : Math.random);
+    if (daily) this.movesLeft -= 1;
+    const finished = res.gameOver || (daily && this.movesLeft <= 0);
     const { x, y } = this.cellPos(to);
     this.tiles[from] = null;
 
@@ -292,8 +406,8 @@ export default class GameScene extends Phaser.Scene {
         if (res.kind === 'merge') this.onMerge(node, to, res, prevBest);
         else this.onSlide(node, to);
         if (res.spawned) this.spawnTile(res.spawned);
-        this.saveProgress(res.gameOver);
-        if (res.gameOver) this.time.delayedCall(550, () => this.showGameOver());
+        this.saveProgress(finished);
+        if (finished) this.time.delayedCall(550, () => this.showResult());
         else this.busy = false;
       },
     });
@@ -304,11 +418,12 @@ export default class GameScene extends Phaser.Scene {
     this.tiles[to] = node;
     this.combo = 0;
     audio.slide();
+    this.updateScore(false);
   }
 
   onMerge(node, to, res, prevBest) {
     node.destroy();
-    this.combo += 1;
+    this.combo = this.state.combo;
     const target = this.tiles[to];
     this.paint(target, res.value);
     const { x, y } = this.cellPos(to);
@@ -316,12 +431,12 @@ export default class GameScene extends Phaser.Scene {
       this.tweens.add({ targets: target, scaleX: { from: 1.35, to: 1 }, scaleY: { from: 0.75, to: 1 }, duration: 320, ease: 'Elastic.easeOut' });
       this.burst(x, y, tileColor(this.theme, res.value), 10 + Math.min(res.value / 16, 14));
     }
-    this.floatText(x, y - 40, `+${res.value}`, this.combo);
+    this.floatText(x, y - 40, `+${res.points}`, this.combo);
     if (res.value >= 128 && !this.reduceMotion) this.cameras.main.shake(140, Math.min(0.003 + res.value / 100000, 0.012));
     audio.merge(res.value, this.combo);
     this.updateScore(true);
-    platform.sendScore(this.state.score);
-    if (prevBest > 0 && prevBest < this.best && !this.announcedBest) {
+    if (this.mode === 'endless') platform.sendScore(this.state.score);
+    if (this.mode === 'endless' && prevBest > 0 && prevBest < this.best && !this.announcedBest) {
       this.announcedBest = true;
       this.floatText(W / 2, BY - 40, 'NEW BEST!', 1, 56);
       audio.best();
@@ -356,39 +471,86 @@ export default class GameScene extends Phaser.Scene {
 
   // ---------- game flow ----------
   saveProgress(gameOver) {
+    if (this.mode === 'daily') {
+      platform.save({
+        mode: 'daily',
+        daily: {
+          date: this.dailyDate, cells: this.state.cells, score: this.state.score, rng: this.rng.getState(),
+          movesLeft: this.movesLeft, start: this.dailyStart, best: this.dailyBest,
+        },
+      });
+      return;
+    }
     platform.save(gameOver
-      ? { best: this.best, cells: null, score: 0 }
-      : { best: this.best, cells: this.state.cells, score: this.state.score });
+      ? { mode: 'endless', best: this.best, cells: null, score: 0 }
+      : { mode: 'endless', best: this.best, cells: this.state.cells, score: this.state.score });
   }
 
-  showGameOver() {
+  showResult(quiet = false) {
     this.over = true;
-    audio.over();
+    this.busy = false; // the card and the `over` flag already block the board
+    if (!quiet) audio.over();
+    if (this.mode === 'daily') { this.showDailyResult(); return; }
     platform.sendScore(this.state.score);
+    const record = this.state.score > 0 && this.state.score > this.startBest;
+    this.showCard({
+      title: record ? 'NEW BEST!' : 'NO MOVES LEFT',
+      score: this.state.score,
+      line: `BEST  ${this.best}`,
+      primary: { label: 'PLAY AGAIN', fn: () => this.newGame() },
+      secondary: { label: 'TRY THE DAILY', fn: () => this.setMode('daily') },
+    });
+  }
+
+  showDailyResult() {
+    const score = this.state.score;
+    const record = score > 0 && score > this.dailyBest;
+    if (record) this.dailyBest = score;
+    const streak = streakAfterFinish(platform.data.streak, platform.data.lastDone, this.dailyDate);
+    platform.save({ streak, lastDone: this.dailyDate });
+    this.saveProgress(true);
+    this.refreshModeUI();
+    this.showCard({
+      title: record ? 'NEW DAILY BEST!' : 'DAILY COMPLETE',
+      score,
+      line: `BEST TODAY ${this.dailyBest}  ·  STREAK ${streak}`,
+      primary: { label: 'RETRY THE BOARD', fn: () => this.newGame() },
+      secondary: { label: 'PLAY ENDLESS', fn: () => this.setMode('endless') },
+    });
+  }
+
+  showCard({ title, score, line, primary, secondary }) {
     const t = this.theme;
     const c = this.add.container(0, 0).setDepth(100);
     const dim = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.72).setInteractive();
     const card = this.add.graphics();
-    card.fillStyle(t.panel, 1).fillRoundedRect(80, 400, W - 160, 440, t.radius + 10);
-    card.lineStyle(5, t.accent, 1).strokeRoundedRect(80, 400, W - 160, 440, t.radius + 10);
-    const record = this.state.score > 0 && this.state.score > this.startBest;
-    const title = this.txt(W / 2, 450, record ? 'NEW BEST!' : 'NO MOVES LEFT', 50, { fontFamily: t.font, color: hex(t.accent) }).setOrigin(0.5, 0);
-    const score = this.txt(W / 2, 540, String(this.state.score), 110, { fontFamily: t.font, color: t.text }).setOrigin(0.5, 0);
-    const best = this.txt(W / 2, 670, `BEST  ${this.best}`, 34, { fontFamily: t.font, color: t.label }).setOrigin(0.5, 0);
-    const btn = this.add.graphics();
-    btn.fillStyle(t.accent, 1).fillRoundedRect(180, 730, W - 360, 80, 40);
-    const btnText = this.txt(W / 2, 770, 'PLAY AGAIN', 36, { fontFamily: t.font, color: hex(t.bg) }).setOrigin(0.5);
-    const hit = this.add.rectangle(W / 2, 770, W - 360, 80, 0xffffff, 0).setInteractive({ useHandCursor: true });
-    hit.on('pointerdown', () => this.newGame());
-    c.add([dim, card, title, score, best, btn, btnText, hit]);
+    card.fillStyle(t.panel, 1).fillRoundedRect(70, 360, W - 140, 560, t.radius + 10);
+    card.lineStyle(5, t.accent, 1).strokeRoundedRect(70, 360, W - 140, 560, t.radius + 10);
+    const head = this.txt(W / 2, 410, title, 46, { fontFamily: t.font, color: hex(t.accent) }).setOrigin(0.5, 0);
+    const big = this.txt(W / 2, 490, String(score), 110, { fontFamily: t.font, color: t.text }).setOrigin(0.5, 0);
+    const sub = this.txt(W / 2, 630, line, 30, { fontFamily: t.font, color: t.label }).setOrigin(0.5, 0);
+    const items = [dim, card, head, big, sub];
+    const button = (y, h, label, fn, filled) => {
+      const g = this.add.graphics();
+      if (filled) g.fillStyle(t.accent, 1).fillRoundedRect(150, y - h / 2, W - 300, h, h / 2);
+      else g.lineStyle(4, t.accent, 1).strokeRoundedRect(150, y - h / 2, W - 300, h, h / 2);
+      const text = this.txt(W / 2, y, label, filled ? 36 : 30, { fontFamily: t.font, color: filled ? hex(t.bg) : hex(t.accent) }).setOrigin(0.5);
+      const hit = this.add.rectangle(W / 2, y, W - 300, h, 0xffffff, 0).setInteractive({ useHandCursor: true });
+      hit.on('pointerdown', fn);
+      items.push(g, text, hit);
+    };
+    button(730, 84, primary.label, primary.fn, true);
+    if (secondary) button(835, 76, secondary.label, secondary.fn, false);
+    c.add(items);
     c.setAlpha(0);
     this.tweens.add({ targets: c, alpha: 1, duration: 250 });
     this.overlay = c;
+    this.overlayPrimary = primary.fn;
   }
 
   onEscape() {
     if (this.tutorial) this.closeTutorial();
-    else if (this.overlay) this.newGame();
+    else if (this.overlay) this.overlayPrimary?.();
   }
 
   // Wiping a run needs a deliberate second tap so a stray touch can't lose progress.
@@ -406,7 +568,7 @@ export default class GameScene extends Phaser.Scene {
   resetRestartBtn() {
     this.confirmTimer?.remove(false);
     this.confirmTimer = null;
-    this.restartBtn.setText('↻  NEW GAME');
+    this.restartBtn.setText(this.restartLabel());
   }
 
   // First-run demo: a finger drags one 2 onto another and they become a 4.
@@ -417,7 +579,7 @@ export default class GameScene extends Phaser.Scene {
     const dim = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.8).setInteractive();
     const title = this.txt(W / 2, 330, 'HOW TO PLAY', 56, { fontFamily: t.font, color: hex(t.accent) }).setOrigin(0.5);
     const line1 = this.txt(W / 2, 780, 'Drag a tile onto an equal\nneighbour to merge them', 38, { fontFamily: t.font, color: '#ffffff', align: 'center' }).setOrigin(0.5);
-    const line2 = this.txt(W / 2, 890, 'Slide into empty cells to make room.\nThe game ends when the board is full.', 26, { fontFamily: t.font, color: '#c9c9d6', align: 'center' }).setOrigin(0.5);
+    const line2 = this.txt(W / 2, 890, 'Chain merges for combo points.\nTry DAILY: the same board for everyone!', 26, { fontFamily: t.font, color: '#c9c9d6', align: 'center' }).setOrigin(0.5);
     const go = this.txt(W / 2, 1040, 'TAP TO PLAY', 44, { fontFamily: t.font, color: hex(t.accent) }).setOrigin(0.5);
     this.tweens.add({ targets: go, alpha: 0.45, duration: 700, yoyo: true, repeat: -1 });
 
@@ -468,12 +630,16 @@ export default class GameScene extends Phaser.Scene {
   newGame() {
     this.overlay?.destroy();
     this.overlay = null;
-    this.startBest = this.best;
-    this.state = createState();
+    if (this.mode === 'daily') {
+      this.retryDaily();
+    } else {
+      this.startBest = this.best;
+      this.state = createState();
+      this.announcedBest = false;
+    }
     this.over = false;
     this.busy = false;
     this.combo = 0;
-    this.announcedBest = false;
     this.syncTiles();
     this.tiles.forEach((n, i) => {
       if (!n) return;
@@ -482,5 +648,6 @@ export default class GameScene extends Phaser.Scene {
     });
     this.updateScore(false);
     this.saveProgress(false);
+    this.refreshModeUI();
   }
 }

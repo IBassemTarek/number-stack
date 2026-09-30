@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { SIZE, N, createState, moveKind, applyMove, hasMoves, spawn, restoreState } from '../src/game/board.js';
+import { SIZE, N, COMBO_CAP, createState, moveKind, applyMove, hasMoves, spawn, restoreState } from '../src/game/board.js';
 
 const empty = () => new Array(N).fill(0);
 
@@ -55,7 +55,7 @@ test('spawn returns null on a full board', () => {
 
 test('restoreState accepts a valid save and rejects bad ones', () => {
   const ok = empty(); ok[3] = 8; ok[4] = 2;
-  assert.deepEqual(restoreState({ cells: ok, score: 40 }), { cells: ok, score: 40 });
+  assert.deepEqual(restoreState({ cells: ok, score: 40 }), { cells: ok, score: 40, combo: 0 });
   assert.equal(restoreState({ cells: ok, score: -5 }).score, 0);
   assert.equal(restoreState(null), null);
   assert.equal(restoreState({ cells: [2, 2] }), null);
@@ -64,4 +64,24 @@ test('restoreState accepts a valid save and rejects bad ones', () => {
   assert.equal(restoreState({ cells: bad }), null); // not a power of two
   const str = empty(); str[0] = '4';
   assert.equal(restoreState({ cells: str }), null);
+});
+
+test('combo: consecutive merges multiply points, a slide resets it', () => {
+  const s = { cells: empty(), score: 0, combo: 0 };
+  s.cells[0] = 2; s.cells[1] = 2; s.cells[2] = 4; s.cells[12] = 2;
+  const first = applyMove(s, 0, 1, () => 0.99);   // 2+2 -> 4, combo 1
+  assert.equal(first.points, 4);
+  const second = applyMove(s, 1, 2, () => 0.99);  // 4+4 -> 8, combo 2
+  assert.equal(second.points, 16);
+  assert.equal(s.combo, 2);
+  applyMove(s, 12, 13, () => 0.99);                // slide
+  assert.equal(s.combo, 0);
+  assert.equal(s.score, 20);
+});
+
+test('combo multiplier is capped', () => {
+  const s = { cells: empty(), score: 0, combo: COMBO_CAP + 3 };
+  s.cells[0] = 2; s.cells[1] = 2;
+  const r = applyMove(s, 0, 1, () => 0.99);
+  assert.equal(r.points, 4 * COMBO_CAP);
 });
